@@ -1,0 +1,44 @@
+#!/bin/bash
+# 環境変数から AWS_ACCESS_KEY_ID と AWS_SECRET_ACCESS_KEY を読み取って
+# aws stsコマンドを使ってsession-tokenを取得します
+# 最初に設定されていた環境変数は、 _AWS_ACCESS_KEY_ID と _AWS_SECRET_ACCESS_KEY に
+# それぞれバックアップされます
+
+function read_env() {
+  sub="_${1}"
+  v=${!sub}
+  if [ -z "${v}" ]; then
+    v=${!1}
+  fi
+
+  if [ -z "${v}" ]; then
+    # TODO credentialsから読み取りたい
+    printf ""
+  else
+    printf "%s" "${v}"
+  fi
+}
+
+function login() {
+  mfa=$(aws sts get-caller-identity --profile sms-biz | jq -r ".Arn")
+  mfa="${mfa/user/mfa}"
+  read -rp "token? : " token
+  # TODO expireが設定できるようにしたい
+  json=$(aws sts get-session-token --serial-number "${mfa}" --token-code "${token}")
+  new_key=$(echo "${json}" | jq -r ".Credentials.AccessKeyId")
+  new_sec=$(echo "${json}" | jq -r ".Credentials.SecretAccessKey")
+  new_tok=$(echo "${json}" | jq -r ".Credentials.SessionToken")
+}
+
+key=$(read_env "AWS_ACCESS_KEY_ID")
+sec=$(read_env "AWS_SECRET_ACCESS_KEY")
+if [ -n "${key}" ] && [ -n "${sec}" ]; then
+  login
+  export AWS_ACCESS_KEY_ID=$new_key
+  export AWS_SECRET_ACCESS_KEY=$new_sec
+  export AWS_SESSION_TOKEN=$new_tok
+  export _AWS_ACCESS_KEY_ID=$key
+  export _AWS_SECRET_ACCESS_KEY=$sec
+else
+  printf "環境変数の設定が足りません\n"
+fi
